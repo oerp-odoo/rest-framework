@@ -9,6 +9,7 @@ import json
 import logging
 import sys
 import traceback
+import inspect
 from collections import defaultdict
 
 from werkzeug.exceptions import (
@@ -67,11 +68,15 @@ def wrapJsonException(exception, include_description=False, extra_info=None):
     """
 
     get_original_headers = exception.get_headers
+    supports_scope = "scope" in inspect.signature(get_original_headers).parameters
     exception.traceback = "".join(traceback.format_exception(*sys.exc_info()))
 
-    def get_body(environ=None):
+    def get_body(environ=None, scope=None):
         res = {"code": exception.code, "name": escape(exception.name)}
-        description = exception.get_description(environ)
+        if supports_scope:
+            description = exception.get_description(environ=environ, scope=scope)
+        else:
+            description = exception.get_description(environ=environ)
         if config.get_misc("base_rest", "dev_mode"):
             # return exception info only if base_rest is in dev_mode
             res.update({"traceback": exception.traceback, "description": description})
@@ -80,12 +85,16 @@ def wrapJsonException(exception, include_description=False, extra_info=None):
         res.update(extra_info or {})
         return JSONEncoder().encode(res)
 
-    def get_headers(environ=None):
+    def get_headers(environ=None, scope=None):
         """Get a list of headers."""
         _headers = [("Content-Type", "application/json")]
-        for key, value in get_original_headers(environ=environ):
+        if supports_scope:
+            original_headers = get_original_headers(environ=environ, scope=scope)
+        else:
+            original_headers = get_original_headers(environ=environ)
+        for key, value in original_headers:
             if key != "Content-Type":
-                _headers.append(key, value)
+                _headers.append((key, value))
         return _headers
 
     exception.get_body = get_body
